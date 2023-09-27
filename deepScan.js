@@ -87,7 +87,7 @@ export function updatePC(ns, IO) {               // this is legacy code but I ca
  IO.protocol = ""
  if (IO.admin){
   if (IO.ramMax > 0){
-   IO.threads = (IO.ramMax / 2);
+   IO.threads = Math.floor(IO.ramMax / 2);
    IO.idle = IO.ramUsed === 0
    if (IO.cash > 0) {
     IO.type = "farm";
@@ -112,12 +112,12 @@ export function updatePC(ns, IO) {               // this is legacy code but I ca
   IO.protocol = "Farming";
   IO.target = IO.NAME;
   IO.goal = 1;
- } else if (IO.type === "node" && IO.idle) IO.target = "hungry";
+ } else if (IO.type === "node" && IO.idle) IO.target = "pending";
  if (IO.NAME === "home"){
   IO.threads = Math.floor((IO.ramMax - IO.ramUsed - 16) / 2);
   if (IO.threads > 0){
    IO.type = "node";
-   IO.target = "hungry";
+   IO.target = "pending";
   } else IO.type = "dead"
  }
  return IO;
@@ -130,40 +130,46 @@ export function updatePC(ns, IO) {               // this is legacy code but I ca
 
 
 
-export function updatePC_new (ns, IO) {
+export function updatePC_new (ns, IO) {  // this shit doesn't work. I don't remember what the purpose of it was anymore
   const FRESH = new PC(ns.getServer(IO.NAME));
   for (let key in FRESH) {                        // Update PC with fresh data 
   if (IO.hasOwnProperty(key)) IO[key] = FRESH[key];
  }
-  IO.protocol = "";
+  IO.protocol = null;
   
-  IO.type = !IO.admin ? "locked" :
-               IO.ramMax > 0 ? (IO.cash > 0 ? "farm" : "node") :
-               IO.cash > 0 ? "bank" :
-               "dead";
+  IO.type = (!IO.admin ? "locked" :
+               (IO.ramMax > 0 ? (IO.cash > 0 ? "farm" : "node") :
+               (IO.cash > 0 ? "bank" :
+               "dead")));
   
-  if (["farm", "node"].includes(IO.type)) {
-   IO.threads = IO.ramMax / 2;
-   IO.idle = IO.ramUsed === 0;
+  if (IO.NAME === "home") {
+   IO.threads = Math.floor((IO.ramMax - IO.ramUsed - 16) / 2);
+   IO.type = "node";
+  } else if (IO.type === "farm" || IO.type === "node") {
+   IO.threads = Math.floor(IO.ramMax - IO.ramUsed / 2);
   }
-  
+
+  IO.idle = IO.threads > 0;
   doorCheck(ns, IO);
   
   const sPct = IO.secGoal / IO.sec;
   const cPct = IO.cash / IO.cashGoal;
+  let isForB = (IO.type === "farm" || IO.type === "bank");
+  let isOpen = (IO.type !== "locked" && IO.type !== "dead")
 
-  IO.protocol = sPct < 0.75 && !["locked", "dead"].includes(IO.type) ? "Security" : 
-                   cPct < 0.75 && ["farm", "bank"].includes(IO.type) ? "Economic" : 
-                   sPct >= 0.75 && cPct >= 0.75 && ["farm", "bank"].includes(IO.type) ? "Farming" : 
-                   "";
+  IO.protocol = (sPct < 0.75 && isOpen ? "Security" : 
+                   (cPct < 0.75 && isForB ? "Economic" : 
+                   (sPct >= 0.75 && cPct >= 0.75 && isForB ? "Farming" : 
+                   null)));
 
-  IO.target = IO.protocol ? IO.NAME : IO.type === "node" && IO.idle ? "hungry" : "";
+  if(IO.protocol === "Economic")
+   IO.goal = IO.cashGoal;
+  else if(IO.protocol === "Farming")
+   IO.goal = IO.secGoal;
 
-  if (IO.NAME === "home") {
-   IO.threads = Math.floor((IO.ramMax - IO.ramUsed - 16) / 2);
-   IO.type = IO.threads > 0 ? "node" : "dead";
-   if (IO.type === "node") IO.target = "hungry";
-  }
+  IO.target = (IO.protocol ? IO.NAME : (IO.type === "node" && IO.idle ? "pending" : null));
 
+  
+  ns.tprint( IO.NAME , " Protocol: ", IO.protocol, " Target: " , IO.target, "  Type: " , IO.type)
   return IO;
 }
